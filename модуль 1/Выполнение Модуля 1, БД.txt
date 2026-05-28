@@ -1,0 +1,261 @@
+0) Что у тебя должно быть
+Папка tables_csv с 4 CSV:
+users.csv
+products.csv
+pickup_points.csv
+orders.csv
+
+1) Создать новую БД
+В pgAdmin:
+
+Databases -> Create -> Database...
+Имя: shoe_store_demo
+Save
+Подключись к ней и открой Query Tool.
+
+
+2) Скрипт №1 — создать таблицы под импорт (простые, без FK)
+DROP TABLE IF EXISTS order_items;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS pickup_points;
+DROP TABLE IF EXISTS products;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS roles;
+DROP TABLE IF EXISTS order_statuses;
+DROP TABLE IF EXISTS suppliers;
+DROP TABLE IF EXISTS manufacturers;
+DROP TABLE IF EXISTS categories;
+
+CREATE TABLE users (
+    role_name TEXT,
+    full_name TEXT,
+    login TEXT,
+    password_plain TEXT
+);
+
+CREATE TABLE products (
+    article TEXT,
+    product_name TEXT,
+    unit_name TEXT,
+    price TEXT,
+    supplier_name TEXT,
+    manufacturer_name TEXT,
+    category_name TEXT,
+    discount_percent TEXT,
+    stock_qty TEXT,
+    description TEXT,
+    photo_file TEXT
+);
+
+CREATE TABLE pickup_points (
+    full_address TEXT
+);
+
+CREATE TABLE orders (
+    order_id INT,
+    order_articles TEXT,
+    order_date TEXT,
+    delivery_date TEXT,
+    pickup_point_ref INT,
+    client_full_name TEXT,
+    pickup_code TEXT,
+    status_name TEXT
+);
+
+
+3) Импорт CSV (через pgAdmin)
+Для каждой таблицы (users, products, pickup_points, orders):
+
+ПКМ по таблице -> Import/Export Data
+Import
+Filename = нужный CSV
+Format = csv
+Header = Yes
+Delimiter = ,
+Quote = "
+Encoding = UTF8
+Во вкладке Columns не выбирай лишнее
+
+
+4) Проверка импорта
+SELECT COUNT(*) FROM users;
+SELECT COUNT(*) FROM products;
+SELECT COUNT(*) FROM pickup_points;
+SELECT COUNT(*) FROM orders;
+
+
+
+5) Скрипт №2 — сделать нормальную структуру (3НФ + ключи)
+-- Справочники
+CREATE TABLE roles (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE order_statuses (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE suppliers (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE manufacturers (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE categories (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+);
+
+-- PK в основных таблицах
+ALTER TABLE users ADD COLUMN user_id SERIAL PRIMARY KEY;
+ALTER TABLE products ADD CONSTRAINT products_pkey PRIMARY KEY (article);
+ALTER TABLE pickup_points ADD COLUMN pickup_point_id SERIAL PRIMARY KEY;
+ALTER TABLE orders ADD CONSTRAINT orders_pkey PRIMARY KEY (order_id);
+
+-- Новые FK-колонки
+ALTER TABLE users ADD COLUMN role_id INT;
+ALTER TABLE products ADD COLUMN supplier_id INT;
+ALTER TABLE products ADD COLUMN manufacturer_id INT;
+ALTER TABLE products ADD COLUMN category_id INT;
+ALTER TABLE orders ADD COLUMN client_id INT;
+ALTER TABLE orders ADD COLUMN status_id INT;
+
+-- Нормальные поля адреса
+ALTER TABLE pickup_points ADD COLUMN post_index TEXT;
+ALTER TABLE pickup_points ADD COLUMN city TEXT;
+ALTER TABLE pickup_points ADD COLUMN street TEXT;
+ALTER TABLE pickup_points ADD COLUMN house TEXT;
+
+
+6) Скрипт №3 — заполнить справочники и связать ID
+
+-- Справочники из данных
+INSERT INTO roles(name)
+SELECT DISTINCT TRIM(role_name) FROM users WHERE TRIM(role_name) <> '';
+
+INSERT INTO order_statuses(name)
+SELECT DISTINCT TRIM(status_name) FROM orders WHERE TRIM(status_name) <> '';
+
+INSERT INTO suppliers(name)
+SELECT DISTINCT TRIM(supplier_name) FROM products WHERE TRIM(supplier_name) <> '';
+
+INSERT INTO manufacturers(name)
+SELECT DISTINCT TRIM(manufacturer_name) FROM products WHERE TRIM(manufacturer_name) <> '';
+
+INSERT INTO categories(name)
+SELECT DISTINCT TRIM(category_name) FROM products WHERE TRIM(category_name) <> '';
+
+-- Проставляем ID
+UPDATE users u
+SET role_id = r.id
+FROM roles r
+WHERE TRIM(u.role_name) = TRIM(r.name);
+
+UPDATE products p
+SET supplier_id = s.id
+FROM suppliers s
+WHERE TRIM(p.supplier_name) = TRIM(s.name);
+
+UPDATE products p
+SET manufacturer_id = m.id
+FROM manufacturers m
+WHERE TRIM(p.manufacturer_name) = TRIM(m.name);
+
+UPDATE products p
+SET category_id = c.id
+FROM categories c
+WHERE TRIM(p.category_name) = TRIM(c.name);
+
+UPDATE orders o
+SET client_id = u.user_id
+FROM users u
+WHERE TRIM(o.client_full_name) = TRIM(u.full_name);
+
+UPDATE orders o
+SET status_id = s.id
+FROM order_statuses s
+WHERE TRIM(o.status_name) = TRIM(s.name);
+
+-- Разобрать адреса пунктов выдачи
+UPDATE pickup_points
+SET
+    post_index = TRIM(split_part(full_address, ',', 1)),
+    city       = TRIM(replace(split_part(full_address, ',', 2), 'г.', '')),
+    street     = TRIM(replace(split_part(full_address, ',', 3), 'ул.', '')),
+    house      = TRIM(split_part(full_address, ',', 4));
+
+
+7) Скрипт №4 — состав заказа (чтобы не строкой, а нормально)
+
+CREATE TABLE order_items (
+    id SERIAL PRIMARY KEY,
+    order_id INT NOT NULL,
+    product_article TEXT NOT NULL,
+    qty INT NOT NULL CHECK (qty > 0),
+    UNIQUE(order_id, product_article)
+);
+
+INSERT INTO order_items(order_id, product_article, qty)
+SELECT
+    o.order_id,
+    TRIM(arr[i]) AS product_article,
+    TRIM(arr[i+1])::INT AS qty
+FROM (
+    SELECT order_id, regexp_split_to_array(order_articles, '\s*,\s*') AS arr
+    FROM orders
+) o
+CROSS JOIN LATERAL generate_series(1, array_length(arr,1), 2) AS i;
+
+
+8) Скрипт №5 — включить ссылочную целостность (FK)
+ALTER TABLE users
+    ADD CONSTRAINT fk_users_role
+    FOREIGN KEY (role_id) REFERENCES roles(id);
+
+ALTER TABLE products
+    ADD CONSTRAINT fk_products_supplier
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+    ADD CONSTRAINT fk_products_manufacturer
+    FOREIGN KEY (manufacturer_id) REFERENCES manufacturers(id),
+    ADD CONSTRAINT fk_products_category
+    FOREIGN KEY (category_id) REFERENCES categories(id);
+
+ALTER TABLE orders
+    ADD CONSTRAINT fk_orders_client
+    FOREIGN KEY (client_id) REFERENCES users(user_id),
+    ADD CONSTRAINT fk_orders_status
+    FOREIGN KEY (status_id) REFERENCES order_statuses(id),
+    ADD CONSTRAINT fk_orders_pickup
+    FOREIGN KEY (pickup_point_ref) REFERENCES pickup_points(pickup_point_id);
+
+ALTER TABLE order_items
+    ADD CONSTRAINT fk_order_items_order
+    FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
+    ADD CONSTRAINT fk_order_items_product
+    FOREIGN KEY (product_article) REFERENCES products(article);
+
+9) Финальная проверка (обязательно показать)
+SELECT COUNT(*) AS users_cnt FROM users;
+SELECT COUNT(*) AS products_cnt FROM products;
+SELECT COUNT(*) AS pickup_points_cnt FROM pickup_points;
+SELECT COUNT(*) AS orders_cnt FROM orders;
+SELECT COUNT(*) AS order_items_cnt FROM order_items;
+
+SELECT COUNT(*) AS bad_users FROM users WHERE role_id IS NULL;
+SELECT COUNT(*) AS bad_products FROM products WHERE supplier_id IS NULL OR manufacturer_id IS NULL OR category_id IS NULL;
+SELECT COUNT(*) AS bad_orders FROM orders WHERE client_id IS NULL OR status_id IS NULL;
+
+
+10) ER-диаграмма PDF
+В pgAdmin:
+
+Tools -> ERD Tool
+Добавь таблицы (users, roles, products, suppliers, manufacturers, categories, orders, order_statuses, pickup_points, order_items)
+Проверь, что связи видны
+Save/Export -> PDF

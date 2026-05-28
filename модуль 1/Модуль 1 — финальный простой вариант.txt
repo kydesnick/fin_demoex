@@ -1,0 +1,155 @@
+Модуль 1 — финальный простой вариант (без сложного SQL)
+
+
+Что сдаешь в итоге
+БД shoe_store_demo
+Импортированные данные (users, products, pickup_points, orders)
+Ссылочная целостность (FK) для ролей и статусов/клиентов заказа
+ER-диаграмма в PDF
+
+
+Шаг 1. Создай БД и таблицы
+
+
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS pickup_points;
+DROP TABLE IF EXISTS products;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS roles;
+DROP TABLE IF EXISTS order_statuses;
+
+CREATE TABLE roles (
+  id SERIAL PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE order_statuses (
+  id SERIAL PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE users (
+  user_id SERIAL PRIMARY KEY,
+  role_name TEXT,
+  full_name TEXT,
+  login TEXT,
+  password_plain TEXT,
+  role_id INT
+);
+
+CREATE TABLE products (
+  article TEXT PRIMARY KEY,
+  product_name TEXT,
+  unit_name TEXT,
+  price TEXT,
+  supplier_name TEXT,
+  manufacturer_name TEXT,
+  category_name TEXT,
+  discount_percent TEXT,
+  stock_qty TEXT,
+  description TEXT,
+  photo_file TEXT
+);
+
+CREATE TABLE pickup_points (
+  pickup_point_id SERIAL PRIMARY KEY,
+  full_address TEXT
+);
+
+CREATE TABLE orders (
+  order_id INT PRIMARY KEY,
+  order_articles TEXT,
+  order_date TEXT,
+  delivery_date TEXT,
+  pickup_point_ref INT,
+  client_full_name TEXT,
+  pickup_code TEXT,
+  status_name TEXT,
+  client_id INT,
+  status_id INT
+);
+
+
+Шаг 2. Импортируй CSV через pgAdmin
+Импортируй файлы:
+
+users.csv -> users
+products.csv -> products
+pickup_points.csv -> pickup_points
+orders.csv -> orders
+Настройки импорта:
+
+Format: csv
+Header: Yes
+Delimiter: ,
+Quote: "
+Encoding: UTF8
+
+Шаг 3. Заполни справочники
+INSERT INTO roles(name) VALUES
+('Администратор'),
+('Менеджер'),
+('Авторизированный клиент')
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO order_statuses(name) VALUES
+('Новый'),
+('Завершен')
+ON CONFLICT (name) DO NOTHING;
+
+
+Шаг 4. Проставь ID в users и orders (простой ручной способ)
+-- role_id
+UPDATE users SET role_id = 1 WHERE role_name = 'Администратор';
+UPDATE users SET role_id = 2 WHERE role_name = 'Менеджер';
+UPDATE users SET role_id = 3 WHERE role_name = 'Авторизированный клиент';
+
+-- status_id
+UPDATE orders SET status_id = 1 WHERE status_name = 'Новый';
+UPDATE orders SET status_id = 1 WHERE status_name = 'Новый ';
+UPDATE orders SET status_id = 2 WHERE status_name = 'Завершен';
+
+-- client_id
+UPDATE orders
+SET client_id = (SELECT user_id FROM users WHERE full_name = 'Степанов Михаил Артёмович' LIMIT 1)
+WHERE client_full_name = 'Степанов Михаил Артёмович';
+
+UPDATE orders
+SET client_id = (SELECT user_id FROM users WHERE full_name = 'Никифорова Весения Николаевна' LIMIT 1)
+WHERE client_full_name = 'Никифорова Весения Николаевна';
+
+UPDATE orders
+SET client_id = (SELECT user_id FROM users WHERE full_name = 'Сазонов Руслан Германович' LIMIT 1)
+WHERE client_full_name = 'Сазонов Руслан Германович';
+
+UPDATE orders
+SET client_id = (SELECT user_id FROM users WHERE full_name = 'Одинцов Серафим Артёмович' LIMIT 1)
+WHERE client_full_name = 'Одинцов Серафим Артёмович';
+
+
+Шаг 5. Проверка перед FK
+SELECT COUNT(*) AS bad_users FROM users WHERE role_id IS NULL;
+SELECT COUNT(*) AS bad_orders FROM orders WHERE client_id IS NULL OR status_id IS NULL;
+
+Шаг 6. Включи ссылочную целостность (FK)
+ALTER TABLE users
+ADD CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles(id);
+
+ALTER TABLE orders
+ADD CONSTRAINT fk_orders_client FOREIGN KEY (client_id) REFERENCES users(user_id);
+
+ALTER TABLE orders
+ADD CONSTRAINT fk_orders_status FOREIGN KEY (status_id) REFERENCES order_statuses(id);
+
+Шаг 7. Финальная проверка
+SELECT COUNT(*) FROM users;
+SELECT COUNT(*) FROM products;
+SELECT COUNT(*) FROM pickup_points;
+SELECT COUNT(*) FROM orders;
+
+Шаг 8. ER-диаграмма PDF
+В pgAdmin:
+
+Tools -> ERD Tool
+Добавь таблицы: users, roles, orders, order_statuses, products, pickup_points
+Экспорт в PDF
