@@ -5,7 +5,15 @@ import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
 import psycopg2
 from PIL import Image, ImageTk
-from config import DB_CONFIG
+
+DB_CONFIG = {
+    "host": "localhost",
+    "port": 5432,
+    "dbname": "shoe_store_demo",
+    "user": "postgres",
+    "password": "postgres",
+}
+
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 IMG = os.path.join(BASE, "images")
