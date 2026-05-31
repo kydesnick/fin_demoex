@@ -13,7 +13,8 @@ DB_CONFIG = {
     "password": "postgres",
 }
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# module2.py в папке «модуль 2», images — на уровень выше (корень fin_demoex)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMAGES_DIR = os.path.join(BASE_DIR, "images")
 ICON_PATH = os.path.join(IMAGES_DIR, "Icon.ico")
 LOGO_PATH = os.path.join(IMAGES_DIR, "Icon.png")
