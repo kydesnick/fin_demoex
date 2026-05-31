@@ -218,11 +218,15 @@ def next_article():
     return str(mx + 1)
 
 def in_orders(article):
-    try:
-        n = db("SELECT COUNT(*) FROM order_items WHERE product_article=%s", (article,), one=True)[0]
-        return n > 0
-    except Exception:
+    art = str(article).strip()
+    if art == "":
         return False
+    n = db(
+        "SELECT COUNT(*) FROM orders WHERE order_articles LIKE %s",
+        ("%" + art + "%",),
+        one=True,
+    )[0]
+    return n > 0
 
 def filter_products(rows):
     text = search_var.get().strip().lower() if search_var else ""
@@ -793,10 +797,6 @@ def save_order():
 def delete_order():
     if not messagebox.askyesno("Подтверждение", "Удалить заказ? Это действие нельзя отменить."):
         return
-    try:
-        db("DELETE FROM order_items WHERE order_id=%s", (order_form_id,))
-    except Exception:
-        pass
     try:
         db("DELETE FROM orders WHERE order_id=%s", (order_form_id,))
     except Exception as e:

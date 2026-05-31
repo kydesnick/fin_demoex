@@ -5,12 +5,6 @@ import psycopg2
 from PIL import Image, ImageTk
 
 
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-IMG = os.path.join(BASE, "images")
-ICON = os.path.join(IMG, "Icon.ico")
-LOGO = os.path.join(IMG, "Icon.png")
-STUB = os.path.join(IMG, "picture.png")
-
 DB_CONFIG = {
     "host": "localhost",
     "port": 5432,
@@ -18,6 +12,12 @@ DB_CONFIG = {
     "user": "postgres",
     "password": "postgres",
 }
+
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+IMG = os.path.join(BASE, "images")
+ICON = os.path.join(IMG, "Icon.ico")
+LOGO = os.path.join(IMG, "Icon.png")
+STUB = os.path.join(IMG, "picture.png")
 
 # цвета по руководству стилю (модуль 3)
 BG = "#FFFFFF"
@@ -169,11 +169,15 @@ def next_article():
 
 
 def in_orders(article):
-    try:
-        n = db("SELECT COUNT(*) FROM order_items WHERE product_article=%s", (article,), one=True)[0]
-        return n > 0
-    except Exception:
+    art = str(article).strip()
+    if art == "":
         return False
+    n = db(
+        "SELECT COUNT(*) FROM orders WHERE order_articles LIKE %s",
+        ("%" + art + "%",),
+        one=True,
+    )[0]
+    return n > 0
 
 
 def filter_products(rows):
